@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
-    <RootNamespace>work_scripts_f_</RootNamespace>
+    <RootNamespace>work_scripts</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
