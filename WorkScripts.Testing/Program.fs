@@ -3,6 +3,7 @@ open Amazon.Runtime
 open Amazon.EC2
 open WorkScripts.Library.EC2
 open System
+open System.IO
 
 let print (input: string) = System.Console.WriteLine(input)
 
@@ -60,7 +61,7 @@ let ec2ClientResult = createEC2ClientWithProfile profileName
 match ec2ClientResult with
 | Ok ec2Client ->
     try
-        let names = [for i in 0..100 -> $"dw-instance-{i}"] @ ["dlg-OSC Services Host"]
+        let names = File.ReadAllLines "Instances.txt"
         let results = snapshotWorkflow ec2Client names |> Async.RunSynchronously
         printfn "Results: %A" results
     with
