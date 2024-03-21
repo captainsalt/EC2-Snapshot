@@ -22,15 +22,21 @@ let snapshotWorkflow ec2Client instanceNames =
             print $"Stopping {instance.InstanceId}"
             stopInstance ec2Client instance
         >>= fun instance ->
-            let rng = Random()
+            let changeRequestNumber = ""
+
             let request = {
-                amiName = $"DELETE ME {rng.Next()}"
-                description = "DELETE ME"
-                tags = ["Name", "DELETE ME"]
-                instance = null
+                instance = instance
+                amiName = $"{instanceName}-{changeRequestNumber}"
+                description = "3/21/2024 {changeRequestNumber}"
+                tags = [
+                    "Name", instanceName
+                    "InstanceID", instance.InstanceId
+                    "SNOW-TICKET", changeRequestNumber
+                ]
             }
+
             print $"""Creating ami for {instance.InstanceId}"""
-            createAmi ec2Client { request with instance = instance }
+            createAmi ec2Client request
         >>= fun instance -> 
             print $"Starting {instance.InstanceId}"
             startInstance ec2Client instance
