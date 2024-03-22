@@ -1,5 +1,18 @@
 ﻿namespace WorkScripts.Library
 
+module Credentials =
+    open Amazon.Runtime.CredentialManagement
+    open Amazon.Runtime
+
+    let getLocalCredentials profileName credentialFn = 
+        let chain = CredentialProfileStoreChain()
+        let mutable credentials = Unchecked.defaultof<AWSCredentials>
+
+        if chain.TryGetAWSCredentials(profileName, &credentials) then
+            credentialFn credentials |> Ok
+        else
+            Error $"Failed to create EC2 client. Profile not found: {profileName}"
+
 module EC2 =
     open Amazon.EC2
     open System.Collections.Generic

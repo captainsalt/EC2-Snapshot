@@ -2,7 +2,6 @@
 open Amazon.Runtime
 open Amazon.EC2
 open WorkScripts.Library.EC2
-open System
 open System.IO
 
 let print (input: string) = System.Console.WriteLine(input)
@@ -23,7 +22,7 @@ let snapshotWorkflow ec2Client instanceNames =
             print $"Stopping {instance.InstanceId}"
             stopInstance ec2Client instance
         >>= fun instance ->
-            let changeRequestNumber = ""
+            let changeRequestNumber = "CHG0193189"
 
             let request = {
                 instance = instance
@@ -38,25 +37,19 @@ let snapshotWorkflow ec2Client instanceNames =
 
             print $"""Creating ami for {instance.InstanceId}"""
             createAmi ec2Client request
-        >>= fun instance -> 
-            print $"Starting {instance.InstanceId}"
-            startInstance ec2Client instance
+        // >>= fun instance -> 
+        //     print $"Starting {instance.InstanceId}"
+        //     startInstance ec2Client instance
 
     instanceNames 
     |> Seq.map (fun instanceName -> workflow instanceName)
     |> Async.Parallel
 
-let createEC2ClientWithProfile profileName =
-    let chain = CredentialProfileStoreChain()
-    let mutable credentials = Unchecked.defaultof<AWSCredentials>
-    if chain.TryGetAWSCredentials(profileName, &credentials) then
-        Ok (new AmazonEC2Client(credentials, Amazon.RegionEndpoint.USGovCloudEast1))
-    else 
-        Error $"Failed to create EC2 client. Profile not found: {profileName}"
-
 // Example usage
-let profileName = "lab"
-let ec2ClientResult = createEC2ClientWithProfile profileName
+open WorkScripts.Library.Credentials
+
+let profileName = "saml"
+let ec2ClientResult = getLocalCredentials "lab" (fun credentials -> new AmazonEC2Client(credentials, Amazon.RegionEndpoint.USGovCloudEast1))
 
 match ec2ClientResult with
 | Ok ec2Client ->
