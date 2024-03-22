@@ -1,0 +1,1 @@
+find . -name *.fsproj | xargs dotnet sln add 
