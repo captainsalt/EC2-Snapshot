@@ -52,6 +52,7 @@ let main args =
             |> Async.RunSynchronously
 
         // Log negative results
+        // warn if instances are not stopped
         printfn "%A" results
     | Error err -> 
         failwith err

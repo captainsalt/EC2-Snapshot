@@ -3,6 +3,7 @@ module Workflow
 open SnapshotArgs
 open Amazon.EC2.Model
 open WorkScripts.Library.EC2
+open System
 
 let private print (input: string) = System.Console.WriteLine(input)
 
@@ -22,6 +23,7 @@ let displayName (instance: Instance) =
     | Some name -> name.Value
     | None -> instance.InstanceId
 
+[<Obselete>]
 let snapshotWorkflow arguments ec2Client instanceName = 
     let cliArguments = cliParser.Parse arguments
 
@@ -37,10 +39,12 @@ let snapshotWorkflow arguments ec2Client instanceName =
 
         let amiRequest = {
             instance = instance
-            amiName = $"{instanceName}-{changeRequestNumber}"
+            // amiName = $"{instanceName}-{changeRequestNumber}"
+            amiName = $"DELETE ME"
             description = cliArguments.GetResult(Description)
             tags = [
-                "Name", instanceName
+                // "Name", instanceName
+                "Name", "DELETE ME"
                 "InstanceID", instance.InstanceId
                 "SNOW-TICKET", changeRequestNumber
             ]
