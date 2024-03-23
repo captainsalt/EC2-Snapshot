@@ -37,16 +37,16 @@ let snapshotWorkflow arguments ec2Client instanceName =
         let changeRequestNumber = cliArguments.GetResult(Task)
 
         let amiRequest =
-            { instance = instance
+            {   instance = instance
                 // amiName = $"{instanceName}-{changeRequestNumber}"
                 amiName = $"DELETE ME"
                 description = cliArguments.GetResult(Description)
                 tags =
-                [
-                    // "Name", instanceName
-                    "Name", "DELETE ME"
-                    "InstanceID", instance.InstanceId
-                    "SNOW-TICKET", changeRequestNumber ] }
+                    [
+                      // "Name", instanceName
+                      "Name", "DELETE ME"
+                      "InstanceID", instance.InstanceId
+                      "SNOW-TICKET", changeRequestNumber ] }
 
         print $"""Creating ami for {displayName instance}"""
 
