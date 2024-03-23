@@ -35,7 +35,10 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
     | (_, instance) :: _ ->
         safeErrPrint $"Ignoring {displayName instance}. It has been found in multiple regions"
         Error(MultipleInstancesFound $"Instance {displayName instance} found in multiple regions")
-    | [] -> Error(InstanceNotFound $"No instance found with the name '{instanceName}'")
+    | [] -> 
+        let formattedRegions = regionList |> List.map _.DisplayName |> List.reduce (sprintf "%s, %s")
+        safeErrPrint $"Instance '{instanceName}' not found in regions {formattedRegions}"
+        Error(InstanceNotFound $"Instance '{instanceName}' not found in regions {formattedRegions}")
 
 let executeSnapshots credentials args instanceLocationResults =
     let snapshotResults =
