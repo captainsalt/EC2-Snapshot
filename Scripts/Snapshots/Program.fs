@@ -11,7 +11,7 @@ open System
 let safeErrPrint (text: string) = System.Console.Error.WriteLine(text)
 
 let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
-    let instance =
+    let locationPairList =
         [ for region in regionList ->
                 async {
                     let client = new AmazonEC2Client(credentials, region)
@@ -27,9 +27,14 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
         |> Seq.choose id
         |> Seq.toList
 
-    match instance with
-    | [ locationPair ] -> Ok locationPair
+    match locationPairList with
+    | [ (_, instance) as locationPair ] when instance.State.Name = InstanceStateName.Stopped -> 
+        Ok locationPair
+    | [ (_, instance) ] -> 
+        safeErrPrint $"Ignoring {displayName instance}. It has not been stopped"
+        Error (InstanceNotStopped $"Instance {displayName instance} has not been stopped")
     | (_,  instance) :: _ -> 
+        safeErrPrint $"Ignoring {displayName instance}. It has been found in multiple regions"
         Error(
             MultipleInstancesFound
                 $"Instance {displayName instance} found in multiple regions"
@@ -42,12 +47,8 @@ let executeSnapshots credentials args instanceLocationResults  =
             async {
                 let endpoint = RegionEndpoint.GetBySystemName(region)
                 let client = new AmazonEC2Client(credentials, endpoint)
-                match! snapshotWorkflow args client (displayName instance) with 
-                | Error err as res -> 
-                    sprintf "%A" err |> safeErrPrint
-                    return res
-                | _ as res -> 
-                    return res
+                
+                return! snapshotWorkflow args client (displayName instance)
             } ]
         |> Async.Parallel
         |> Async.RunSynchronously
@@ -84,10 +85,10 @@ let main args =
                 |> Seq.map (locateInstance credentials regionList)
 
             // Pause if errors and no ignore flag
-            let containsErrors = ec2LocationResults |> Seq.filter (Result.isError) |> Seq.isEmpty |> not
+            let locationErrorsPresent = ec2LocationResults |> Seq.filter (Result.isError) |> Seq.isEmpty |> not
             let ignoreErrors = parsedArgs.Contains Ignore_Errors
 
-            if (containsErrors, ignoreErrors) = (true, false) then 
+            if (locationErrorsPresent, ignoreErrors) = (true, false) then 
                 ec2LocationResults 
                 |> Seq.filter (Result.isError)
                 |> Seq.iter (sprintf "%A" >> safeErrPrint)
