@@ -7,37 +7,33 @@ open Amazon.EC2
 open SnapshotArgs
 open Amazon
 
-// TODO: Pass in credentials instead of using useLocalCredentials
-let locateInstance awsProfile (regionList: RegionEndpoint list) instanceName =
-    match useLocalCredentials awsProfile with
-    | Ok credentials ->
-        let instance =
-            [ for region in regionList ->
-                  async {
-                      let client = new AmazonEC2Client(credentials, region)
-                      let! instanceResult = getInstanceByName client instanceName
+let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
+    let instance =
+        [ for region in regionList ->
+                async {
+                    let client = new AmazonEC2Client(credentials, region)
+                    let! instanceResult = getInstanceByName client instanceName
 
-                      match instanceResult with
-                      | Error(InstanceNotFound _) -> return None
-                      | Error err -> return failwith $"Unexpected error {err}"
-                      | Ok instance -> return Some(region.SystemName, instance)
-                  } ]
-            |> Async.Parallel
-            |> Async.RunSynchronously
-            |> Seq.choose id
-            |> Seq.toList
+                    match instanceResult with
+                    | Error(InstanceNotFound _) -> return None
+                    | Error err -> return failwith $"Unexpected error {err}"
+                    | Ok instance -> return Some(region.SystemName, instance)
+                } ]
+        |> Async.Parallel
+        |> Async.RunSynchronously
+        |> Seq.choose id
+        |> Seq.toList
 
-        match instance with
-        | [ locationPair ] -> Ok locationPair
-        | (_,  instance) :: _ -> 
-            Error(
-                MultipleInstancesFound
-                    $"Instance {displayName instance} found in multiple regions"
-            )
-        | [] -> Error (InstanceNotFound $"No instance found with the name '{instanceName}'")
-    | Error err -> failwith err
+    match instance with
+    | [ locationPair ] -> Ok locationPair
+    | (_,  instance) :: _ -> 
+        Error(
+            MultipleInstancesFound
+                $"Instance {displayName instance} found in multiple regions"
+        )
+    | [] -> Error (InstanceNotFound $"No instance found with the name '{instanceName}'")
 
-let executeSnapshots args credentials instanceLocationResults  = 
+let executeSnapshots credentials args instanceLocationResults  = 
     let snapshotResults =
         [ for (region, instance) in (instanceLocationResults |> Seq.choose Result.toOption) ->
             async {
@@ -66,24 +62,26 @@ let main args =
         let parsedArgs = cliParser.Parse args
         let awsProfile = parsedArgs.GetResult SnapshotArgs.Profile
 
-        let regionList =
-            parsedArgs.GetResult Regions
-            |> Seq.map RegionEndpoint.GetBySystemName
-            |> Seq.toList
-
-        // Implementation
-        let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines |> Seq.map _.Trim() |> Seq.filter ((<>) "")
-
-        let instanceLocationResults =
-            instanceIds
-            |> Seq.map (locateInstance awsProfile regionList)
-
         match useLocalCredentials awsProfile with 
-        | Ok credentials ->
-            let snapshotResults = executeSnapshots args credentials instanceLocationResults
+        | Ok credentials -> 
+            let regionList =
+                parsedArgs.GetResult Regions
+                |> Seq.map RegionEndpoint.GetBySystemName
+                |> Seq.toList
+
+            // Implementation
+            let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines |> Seq.map _.Trim() |> Seq.filter ((<>) "")
+
+            let instanceLocationResults =
+                instanceIds
+                |> Seq.map (locateInstance credentials regionList)
+       
+            let snapshotResults = executeSnapshots credentials args instanceLocationResults
+
             match snapshotResults with 
             | Ok _ -> () 
             | Error errs -> errs |> List.iter (fun err -> eprintfn $"{err}")
+
         | Error err -> 
             failwith err
 
