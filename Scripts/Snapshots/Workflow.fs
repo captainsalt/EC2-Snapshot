@@ -32,27 +32,29 @@ let snapshotWorkflow arguments ec2Client instanceName =
             print $"Stopping {displayName instance}"
             stopInstance ec2Client instance
         | false -> async.Return(Ok instance)
-        >>= fun instance ->
-            let changeRequestNumber = cliArguments.GetResult(Task)
 
-            let amiRequest =
-                { instance = instance
-                  // amiName = $"{instanceName}-{changeRequestNumber}"
-                  amiName = $"DELETE ME"
-                  description = cliArguments.GetResult(Description)
-                  tags =
-                    [
-                      // "Name", instanceName
-                      "Name", "DELETE ME"
-                      "InstanceID", instance.InstanceId
-                      "SNOW-TICKET", changeRequestNumber ] }
+    >>= fun instance ->
+        let changeRequestNumber = cliArguments.GetResult(Task)
 
-            print $"""Creating ami for {displayName instance}"""
+        let amiRequest =
+            { instance = instance
+                // amiName = $"{instanceName}-{changeRequestNumber}"
+                amiName = $"DELETE ME"
+                description = cliArguments.GetResult(Description)
+                tags =
+                [
+                    // "Name", instanceName
+                    "Name", "DELETE ME"
+                    "InstanceID", instance.InstanceId
+                    "SNOW-TICKET", changeRequestNumber ] }
 
-            createAmi ec2Client amiRequest
-            >>= fun instance ->
-                match cliArguments.Contains Start_Instances with
-                | true ->
-                    print $"Starting {displayName instance}"
-                    startInstance ec2Client instance
-                | false -> async.Return(Ok instance)
+        print $"""Creating ami for {displayName instance}"""
+
+        createAmi ec2Client amiRequest
+
+    >>= fun instance ->
+        match cliArguments.Contains Start_Instances with
+        | true ->
+            print $"Starting {displayName instance}"
+            startInstance ec2Client instance
+        | false -> async.Return(Ok instance)
