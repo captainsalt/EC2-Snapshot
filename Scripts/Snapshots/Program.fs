@@ -7,6 +7,9 @@ open Amazon.EC2
 open SnapshotArgs
 open Amazon
 
+let printn (text: string) = System.Console.WriteLine(text)
+let eprintn (text: string) = System.Console.Error.WriteLine(text)
+
 let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
     let instance =
         [ for region in regionList ->
@@ -74,12 +77,26 @@ let main args =
 
                 instanceIds
                 |> Seq.map (locateInstance credentials regionList)
+
+            // Pause if errors and no ignore flag
+            let containsErrors = ec2LocationResults |> Seq.filter (Result.isError) |> Seq.isEmpty |> not
+            let ignoreErrors = parsedArgs.Contains Ignore_Errors
+
+            match (containsErrors, ignoreErrors) with 
+            | (true, false) -> 
+                ec2LocationResults 
+                |> Seq.filter (Result.isError)
+                |> Seq.iter (sprintf "%A" >> eprintn)
+
+                failwith "Stopping script. Errors found when locating instances"
+            | _ -> ()            
        
+            // Execute snapshots
             let snapshotResults = executeSnapshots credentials args ec2LocationResults
 
             match snapshotResults with 
             | Ok _ -> () 
-            | Error errs -> errs |> List.iter (fun err -> eprintfn $"{err}")
+            | Error errs -> errs |> List.iter (sprintf "%A" >> eprintn)
 
         | Error err -> 
             failwith err

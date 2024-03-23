@@ -11,6 +11,7 @@ type Arguments =
     | [<Mandatory; AltCommandLine("-d")>] Description of string
     | [<AltCommandLine("--stop")>] Stop_Instances
     | [<AltCommandLine("--start")>] Start_Instances
+    | Ignore_Errors
 
     interface IArgParserTemplate with
         member s.Usage =
@@ -24,5 +25,6 @@ type Arguments =
             | Start_Instances ->
                 "Use this flag if you want the script to start the instances after the snapshots are done"
             | Profile _ -> "Use this flag to specify an aws profile to use"
+            | Ignore_Errors -> "If the script can't find any of the instances specified in the input file, it will stop. Use this flag to bypass this behaviour"
 
 let cliParser = ArgumentParser.Create<Arguments>()
