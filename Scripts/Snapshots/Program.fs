@@ -44,12 +44,12 @@ let executeSnapshots credentials args instanceLocationResults  =
         |> Async.Parallel
         |> Async.RunSynchronously
         |> Seq.toList
-    let errors = [
-        for (Error snapshotError) in snapshotResults |> Seq.filter (Result.isError) -> 
-            snapshotError
 
-        for (Error locationError) in instanceLocationResults |> Seq.filter (Result.isError) -> 
-            locationError
+    let errors = [
+        let filterErrors list  = list |> Seq.filter (Result.isError)
+
+        for (Error locationError) in filterErrors instanceLocationResults -> locationError
+        for (Error snapshotError) in filterErrors snapshotResults -> snapshotError
     ]
 
     match errors with 
@@ -69,14 +69,13 @@ let main args =
                 |> Seq.map RegionEndpoint.GetBySystemName
                 |> Seq.toList
 
-            // Implementation
-            let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines |> Seq.map _.Trim() |> Seq.filter ((<>) "")
+            let ec2LocationResults =
+                let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines |> Seq.map _.Trim() |> Seq.filter ((<>) "")
 
-            let instanceLocationResults =
                 instanceIds
                 |> Seq.map (locateInstance credentials regionList)
        
-            let snapshotResults = executeSnapshots credentials args instanceLocationResults
+            let snapshotResults = executeSnapshots credentials args ec2LocationResults
 
             match snapshotResults with 
             | Ok _ -> () 
