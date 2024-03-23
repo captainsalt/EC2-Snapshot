@@ -23,6 +23,7 @@ let locateInstance awsProfile (regionList: RegionEndpoint list) instanceName =
         |> Async.Parallel
         |> Async.RunSynchronously
         |> Seq.choose id
+        |> Seq.exactlyOne
     | Error err -> failwith err
 
 [<EntryPoint>]
@@ -35,7 +36,7 @@ let main args =
     let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines
     let instanceLocations =
         instanceIds 
-        |> Seq.collect (locateInstance awsProfile regionList)
+        |> Seq.map (locateInstance awsProfile regionList)
         |> Seq.sortBy (fun (region, _) -> region)
 
     match useLocalCredentials awsProfile with
