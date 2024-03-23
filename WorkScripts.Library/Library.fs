@@ -4,7 +4,7 @@ module Credentials =
     open Amazon.Runtime.CredentialManagement
     open Amazon.Runtime
 
-    let useLocalCredentials profileName = 
+    let useLocalCredentials profileName =
         let chain = CredentialProfileStoreChain()
         let mutable credentials = Unchecked.defaultof<AWSCredentials>
 
@@ -65,15 +65,15 @@ module EC2 =
             | None -> return Error(ImageNotFound $"Image {imageId} not found")
         }
 
-    let private isInstanceStopped (ec2Client: AmazonEC2Client) (instance: Instance) = 
+    let private isInstanceStopped (ec2Client: AmazonEC2Client) (instance: Instance) =
         async {
             let request = createDescribeInstancesRequest "instance-id" instance.InstanceId
             let! response = ec2Client.DescribeInstancesAsync(request) |> Async.AwaitTask
             let instance = extractInstances response |> Seq.tryHead
 
-            match instance with 
-            | Some instance when instance.State.Name = InstanceStateName.Stopped -> return true 
-            | Some _ -> return false 
+            match instance with
+            | Some instance when instance.State.Name = InstanceStateName.Stopped -> return true
+            | Some _ -> return false
             | None -> return false
         }
 
@@ -145,9 +145,10 @@ module EC2 =
 
     let createAmi (ec2Client: AmazonEC2Client) (amiRequest: AmiRequest) =
         async {
-            match! isInstanceStopped ec2Client amiRequest.instance with 
-            | false -> return Error (InstanceNotStopped $"Instance {displayName amiRequest.instance} has not been stopped")
-            | true -> 
+            match! isInstanceStopped ec2Client amiRequest.instance with
+            | false ->
+                return Error(InstanceNotStopped $"Instance {displayName amiRequest.instance} has not been stopped")
+            | true ->
                 let tags = tagsFromTuple amiRequest.tags
 
                 let imageRequest =
