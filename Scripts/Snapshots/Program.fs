@@ -54,7 +54,7 @@ let executeSnapshots credentials args instanceLocationResults  =
     let errors = [
         let filterErrors list = list |> Seq.filter (Result.isError)
 
-        for (Error locatorErrors) in filterErrors instanceLocationResults -> locatorErrors
+        for (Error locatorError) in filterErrors instanceLocationResults -> locatorError
         for (Error snapshotError) in filterErrors snapshotResults -> snapshotError
     ]
 
