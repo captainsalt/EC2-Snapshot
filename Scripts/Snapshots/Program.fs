@@ -6,6 +6,7 @@ open Workflow
 open Amazon.EC2
 open SnapshotArgs
 open Amazon
+open System
 
 let printn (text: string) = System.Console.WriteLine(text)
 let eprintn (text: string) = System.Console.Error.WriteLine(text)
@@ -42,7 +43,12 @@ let executeSnapshots credentials args instanceLocationResults  =
             async {
                 let endpoint = RegionEndpoint.GetBySystemName(region)
                 let client = new AmazonEC2Client(credentials, endpoint)
-                return! snapshotWorkflow args client (displayName instance)
+                match! snapshotWorkflow args client (displayName instance) with 
+                | Error err as res -> 
+                    sprintf "%A" err |> eprintn
+                    return res
+                | _ as res -> 
+                    return res
             } ]
         |> Async.Parallel
         |> Async.RunSynchronously
@@ -51,7 +57,7 @@ let executeSnapshots credentials args instanceLocationResults  =
     let errors = [
         let filterErrors list = list |> Seq.filter (Result.isError)
 
-        for (Error locationError) in filterErrors instanceLocationResults -> locationError
+        for (Error locatorErrors) in filterErrors instanceLocationResults -> locatorErrors
         for (Error snapshotError) in filterErrors snapshotResults -> snapshotError
     ]
 
@@ -94,7 +100,10 @@ let main args =
 
             match snapshotResults with 
             | Ok _ -> () 
-            | Error errs -> errs |> List.iter (sprintf "%A" >> eprintn)
+            | Error errs -> 
+                let boundary = String('-', 30)
+                eprintfn "\n\n%sAll Errors%s" boundary boundary 
+                errs |> List.iter (sprintf "%A" >> eprintn)
 
         | Error err -> 
             failwith err

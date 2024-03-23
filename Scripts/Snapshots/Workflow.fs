@@ -26,7 +26,7 @@ let snapshotWorkflow arguments ec2Client instanceName =
         | false -> async.Return(Ok instance)
 
     >>= fun instance ->
-        let changeRequestNumber = cliArguments.GetResult(Task)
+        let changeRequestNumber = cliArguments.GetResult(CTask)
 
         let amiRequest =
             {   instance = instance

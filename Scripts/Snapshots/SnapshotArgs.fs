@@ -7,7 +7,7 @@ type Arguments =
     | Regions of regions: string list
     | Profile of profile_name: string
     | [<Mandatory; AltCommandLine("-f")>] Input of file_path: string
-    | [<Mandatory>] Task of string
+    | [<Mandatory>] CTask of string
     | [<Mandatory; AltCommandLine("-d")>] Description of string
     | [<AltCommandLine("--stop")>] Stop_Instances
     | [<AltCommandLine("--start")>] Start_Instances
@@ -18,7 +18,7 @@ type Arguments =
             match s with
             | Regions _ -> "List of regions to search for instances"
             | Input _ -> "Path to a file with a list of instance ids"
-            | Task _ -> "The SNOW ticket for this snapshot request. Example: 'CTASK0088254'"
+            | CTask _ -> "The SNOW ticket for this snapshot request. Example: 'CTASK0088254'"
             | Description _ ->
                 $"""Description of the snapshot resource. Example: '{DateTime.Now.ToString("M/d/yyyy")} CTASK0088254'"""
             | Stop_Instances -> "Use this flag if you want the script to stop the instances before taking snapshots"
