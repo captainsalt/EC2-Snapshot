@@ -69,7 +69,7 @@ let main args =
         let awsProfile = parsedArgs.GetResult SnapshotArgs.Profile
 
         match useLocalCredentials awsProfile with 
-        | Ok credentials -> 
+        | Some credentials -> 
             let regionList =
                 parsedArgs.GetResult Regions
                 |> Seq.map RegionEndpoint.GetBySystemName
@@ -102,8 +102,8 @@ let main args =
                 eprintfn "\n\n%sAll Errors%s" boundary boundary 
                 errs |> List.iter (sprintf "%A" >> safeErrPrint)
 
-        | Error err -> 
-            failwith err
+        | None -> 
+            safeErrPrint $"Falied to get credentials with profile '{awsProfile}'. Make sure that it exists"
 
         0
     with

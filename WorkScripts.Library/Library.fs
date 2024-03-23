@@ -9,9 +9,9 @@ module Credentials =
         let mutable credentials = Unchecked.defaultof<AWSCredentials>
 
         if chain.TryGetAWSCredentials(profileName, &credentials) then
-            Ok credentials
+            Some credentials
         else
-            Error $"Failed to create EC2 client. Profile not found: {profileName}"
+            None
 
 module EC2 =
     open Amazon.EC2
