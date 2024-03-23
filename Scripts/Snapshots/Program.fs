@@ -35,10 +35,7 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
         Error (InstanceNotStopped $"Instance {displayName instance} has not been stopped")
     | (_,  instance) :: _ -> 
         safeErrPrint $"Ignoring {displayName instance}. It has been found in multiple regions"
-        Error(
-            MultipleInstancesFound
-                $"Instance {displayName instance} found in multiple regions"
-        )
+        Error (MultipleInstancesFound $"Instance {displayName instance} found in multiple regions")
     | [] -> Error (InstanceNotFound $"No instance found with the name '{instanceName}'")
 
 let executeSnapshots credentials args instanceLocationResults  = 
