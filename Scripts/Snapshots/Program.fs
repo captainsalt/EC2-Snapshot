@@ -26,43 +26,62 @@ let locateInstance awsProfile (regionList: RegionEndpoint list) instanceName =
             |> Seq.toList
 
         match instance with
-        | [ instance ] -> instance
-        | (_, instance) :: _ -> failwith $"Instance '{displayName instance}' found in multiple regions"
-        | [] -> failwith $"No instance found with the name '{instanceName}'" 
+        | [ locationPair ] -> Ok locationPair
+        | (_,  instance) :: _ -> 
+            Error(
+                MultipleInstancesFound
+                    $"Instance {displayName instance} found in multiple regions"
+            )
+        | [] -> Error (InstanceNotFound $"No instance found with the name '{instanceName}'")
     | Error err -> failwith err
 
 [<EntryPoint>]
 let main args =
-    let parsedArgs = cliParser.Parse args
-    let awsProfile = parsedArgs.GetResult SnapshotArgs.Profile
+    try
+        let parsedArgs = cliParser.Parse args
+        let awsProfile = parsedArgs.GetResult SnapshotArgs.Profile
 
-    let regionList =
-        parsedArgs.GetResult Regions
-        |> Seq.map RegionEndpoint.GetBySystemName
-        |> Seq.toList
+        let regionList =
+            parsedArgs.GetResult Regions
+            |> Seq.map RegionEndpoint.GetBySystemName
+            |> Seq.toList
 
-    // Implementation
-    let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines |> Seq.map _.Trim() |> Seq.filter ((<>) "")
+        // Implementation
+        let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines |> Seq.map _.Trim() |> Seq.filter ((<>) "")
 
-    let instanceLocations =
-        instanceIds
-        |> Seq.map (locateInstance awsProfile regionList)
-        |> Seq.sortBy (fun (region, _) -> region)
+        let instanceLocationResults =
+            instanceIds
+            |> Seq.map (locateInstance awsProfile regionList)
 
-    match useLocalCredentials awsProfile with
-    | Ok credentials ->
-        let results =
-            [ for (region, instance) in instanceLocations ->
-                  async {
-                      let endpoint = RegionEndpoint.GetBySystemName(region)
-                      let client = new AmazonEC2Client(credentials, endpoint)
-                      return! snapshotWorkflow args client (displayName instance)
-                  } ]
-            |> Async.Parallel
-            |> Async.RunSynchronously
+        match useLocalCredentials awsProfile with
+        | Ok credentials ->
+            let snapshotResults =
+                [ for (region, instance) in (instanceLocationResults |> Seq.choose Result.toOption) ->
+                    async {
+                        let endpoint = RegionEndpoint.GetBySystemName(region)
+                        let client = new AmazonEC2Client(credentials, endpoint)
+                        return! snapshotWorkflow args client (displayName instance)
+                    } ]
+                |> Async.Parallel
+                |> Async.RunSynchronously
+                |> Seq.toList
 
-        printfn "%A" results
+            let errors = [
+                for (Error snapshotError) in snapshotResults |> Seq.filter (Result.isError) -> 
+                    snapshotError
+
+                for (Error locationError) in instanceLocationResults |> Seq.filter (Result.isError) -> 
+                    locationError
+            ]
+
+            match errors with 
+            | [] -> printfn "No errors"
+            | _ -> errors |> List.iter (fun err -> eprintfn $"{err}")
+        | Error err -> 
+            failwith err
+
         0
-    | Error err -> 
-        failwith err
+    with
+    | err -> 
+        eprintf $"{err.Message}"
         1
