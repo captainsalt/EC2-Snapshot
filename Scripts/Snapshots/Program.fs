@@ -23,11 +23,12 @@ let locateInstance awsProfile (regionList: RegionEndpoint list) instanceName =
             |> Async.Parallel
             |> Async.RunSynchronously
             |> Seq.choose id
-            |> Seq.tryExactlyOne
+            |> Seq.toList
 
         match instance with
-        | Some instance -> instance
-        | None -> failwith $"{instance} found in multiple regions"
+        | [ instance ] -> instance
+        | (_, instance) :: _ -> failwith $"Instance '{displayName instance}' found in multiple regions"
+        | [] -> failwith $"No instance found with the name '{instanceName}'" 
     | Error err -> failwith err
 
 [<EntryPoint>]
