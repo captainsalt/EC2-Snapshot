@@ -23,7 +23,7 @@ let displayName (instance: Instance) =
     | Some name -> name.Value
     | None -> instance.InstanceId
 
-[<Obselete>]
+[<Obsolete>]
 let snapshotWorkflow arguments ec2Client instanceName = 
     let cliArguments = cliParser.Parse arguments
 
