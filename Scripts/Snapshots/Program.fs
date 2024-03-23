@@ -18,8 +18,7 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
                     let! instanceResult = getInstanceByName client instanceName
 
                     match instanceResult with
-                    | Error(InstanceNotFound _) -> return None
-                    | Error err -> return failwith $"Unexpected error {err}"
+                    | Error _ -> return None
                     | Ok instance -> return Some(region.SystemName, instance)
                 } ]
         |> Async.Parallel
