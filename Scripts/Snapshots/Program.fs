@@ -42,7 +42,7 @@ let main args =
         |> Seq.toList
 
     // Implementation
-    let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines
+    let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines |> Seq.map _.Trim() |> Seq.filter ((<>) "")
 
     let instanceLocations =
         instanceIds
