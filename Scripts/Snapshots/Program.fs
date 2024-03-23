@@ -8,8 +8,7 @@ open SnapshotArgs
 open Amazon
 open System
 
-let printn (text: string) = System.Console.WriteLine(text)
-let eprintn (text: string) = System.Console.Error.WriteLine(text)
+let safeErrPrint (text: string) = System.Console.Error.WriteLine(text)
 
 let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
     let instance =
@@ -45,7 +44,7 @@ let executeSnapshots credentials args instanceLocationResults  =
                 let client = new AmazonEC2Client(credentials, endpoint)
                 match! snapshotWorkflow args client (displayName instance) with 
                 | Error err as res -> 
-                    sprintf "%A" err |> eprintn
+                    sprintf "%A" err |> safeErrPrint
                     return res
                 | _ as res -> 
                     return res
@@ -91,7 +90,7 @@ let main args =
             if (containsErrors, ignoreErrors) = (true, false) then 
                 ec2LocationResults 
                 |> Seq.filter (Result.isError)
-                |> Seq.iter (sprintf "%A" >> eprintn)
+                |> Seq.iter (sprintf "%A" >> safeErrPrint)
 
                 failwith "Stopping script. Errors found when locating instances"
 
@@ -103,7 +102,7 @@ let main args =
             | Error errs -> 
                 let boundary = String('-', 30)
                 eprintfn "\n\n%sAll Errors%s" boundary boundary 
-                errs |> List.iter (sprintf "%A" >> eprintn)
+                errs |> List.iter (sprintf "%A" >> safeErrPrint)
 
         | Error err -> 
             failwith err
