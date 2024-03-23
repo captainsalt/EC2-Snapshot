@@ -82,15 +82,13 @@ let main args =
             let containsErrors = ec2LocationResults |> Seq.filter (Result.isError) |> Seq.isEmpty |> not
             let ignoreErrors = parsedArgs.Contains Ignore_Errors
 
-            match (containsErrors, ignoreErrors) with 
-            | (true, false) -> 
+            if (containsErrors, ignoreErrors) = (true, false) then 
                 ec2LocationResults 
                 |> Seq.filter (Result.isError)
                 |> Seq.iter (sprintf "%A" >> eprintn)
 
                 failwith "Stopping script. Errors found when locating instances"
-            | _ -> ()            
-       
+
             // Execute snapshots
             let snapshotResults = executeSnapshots credentials args ec2LocationResults
 
