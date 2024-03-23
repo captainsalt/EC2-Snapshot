@@ -13,14 +13,7 @@ let private (>>=) computation fn =
         | Ok r -> return! fn r
         | Error s -> return Error s
     }
-
-let displayName (instance: Instance) =
-    let nameTag = instance.Tags |> Seq.tryFind (fun t -> t.Key = "Name")
-
-    match nameTag with
-    | Some name -> name.Value
-    | None -> instance.InstanceId
-
+    
 let snapshotWorkflow arguments ec2Client instanceName =
     let cliArguments = cliParser.Parse arguments
 

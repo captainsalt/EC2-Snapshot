@@ -28,6 +28,7 @@ module EC2 =
         | InstanceNotFound of string
         | ImageNotFound of string
         | InstanceTerminated of string
+        | InstanceNotStopped of string
         | MultipleInstancesFound of string
         | ErrorStoppingInstance of string
         | ErrorStartingInstance of string
@@ -59,10 +60,29 @@ module EC2 =
             | Some image when invalidStates |> List.contains image.State ->
                 return Error(ErrorCreatingImage $"Error creating image for instance {image.SourceInstanceId}")
             | Some image ->
-                do! Async.Sleep 3_000
+                do! Async.Sleep 2_500
                 return! waitForImage ec2Client image.ImageId
             | None -> return Error(ImageNotFound $"Image {imageId} not found")
         }
+
+    let private isInstanceStopped (ec2Client: AmazonEC2Client) (instance: Instance) = 
+        async {
+            let request = createDescribeInstancesRequest "instance-id" instance.InstanceId
+            let! response = ec2Client.DescribeInstancesAsync(request) |> Async.AwaitTask
+            let instance = extractInstances response |> Seq.tryHead
+
+            match instance with 
+            | Some instance when instance.State.Name = InstanceStateName.Stopped -> return true 
+            | Some _ -> return false 
+            | None -> return false
+        }
+
+    let displayName (instance: Instance) =
+        let nameTag = instance.Tags |> Seq.tryFind (fun t -> t.Key = "Name")
+
+        match nameTag with
+        | Some name -> name.Value
+        | None -> instance.InstanceId
 
     let getInstanceById (ec2Client: AmazonEC2Client) (instanceId: string) =
         async {
@@ -72,7 +92,7 @@ module EC2 =
 
             match instances with
             | [ instance ] when instance.State.Name = InstanceStateName.Terminated ->
-                return Error(InstanceTerminated $"Instance '{instance.InstanceId}' has been terminated")
+                return Error(InstanceTerminated $"Instance '{displayName instance}' has been terminated")
             | [ instance ] -> return Ok instance
             | _ -> return Error(InstanceNotFound $"Instance with id '{instanceId}' not found")
         }
@@ -117,7 +137,7 @@ module EC2 =
                         return! waitUntilStopped ()
                     | Error s ->
                         return
-                            Error(ErrorStoppingInstance $"Error while stopping instance '{instance.InstanceId}': {s}")
+                            Error(ErrorStoppingInstance $"Error while stopping instance '{displayName instance}': {s}")
                 }
 
             return! waitUntilStopped ()
@@ -125,25 +145,28 @@ module EC2 =
 
     let createAmi (ec2Client: AmazonEC2Client) (amiRequest: AmiRequest) =
         async {
-            let tags = tagsFromTuple amiRequest.tags
+            match! isInstanceStopped ec2Client amiRequest.instance with 
+            | false -> return Error (InstanceNotStopped $"Instance {displayName amiRequest.instance} has not been stopped")
+            | true -> 
+                let tags = tagsFromTuple amiRequest.tags
 
-            let imageRequest =
-                new CreateImageRequest(
-                    InstanceId = amiRequest.instance.InstanceId,
-                    Name = amiRequest.amiName,
-                    TagSpecifications =
-                        new List<TagSpecification>(
-                            [ new TagSpecification(ResourceType = ResourceType.Image, Tags = new List<Tag>(tags))
-                              new TagSpecification(ResourceType = ResourceType.Snapshot, Tags = new List<Tag>(tags)) ]
-                        )
-                )
+                let imageRequest =
+                    new CreateImageRequest(
+                        InstanceId = amiRequest.instance.InstanceId,
+                        Name = amiRequest.amiName,
+                        TagSpecifications =
+                            new List<TagSpecification>(
+                                [ new TagSpecification(ResourceType = ResourceType.Image, Tags = new List<Tag>(tags))
+                                  new TagSpecification(ResourceType = ResourceType.Snapshot, Tags = new List<Tag>(tags)) ]
+                            )
+                    )
 
-            let! response = ec2Client.CreateImageAsync(imageRequest) |> Async.AwaitTask
-            let! imageResult = waitForImage ec2Client response.ImageId
+                let! response = ec2Client.CreateImageAsync(imageRequest) |> Async.AwaitTask
+                let! imageResult = waitForImage ec2Client response.ImageId
 
-            match imageResult with
-            | Ok _ -> return Ok amiRequest.instance
-            | Error err -> return Error err
+                match imageResult with
+                | Ok _ -> return Ok amiRequest.instance
+                | Error err -> return Error err
         }
 
     let startInstance (ec2Client: AmazonEC2Client) (instance: Instance) =
@@ -164,7 +187,7 @@ module EC2 =
                         return! waitUntilStarted ()
                     | Error msg ->
                         return
-                            Error(ErrorStartingInstance $"Error when starting instance '{instance.InstanceId}': {msg}")
+                            Error(ErrorStartingInstance $"Error when starting instance '{displayName instance}': {msg}")
                 }
 
             return! waitUntilStarted ()
