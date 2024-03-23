@@ -1,4 +1,5 @@
-﻿open WorkScripts.Library.Credentials
+﻿#nowarn "25"
+open WorkScripts.Library.Credentials
 open WorkScripts.Library.EC2
 open System.IO
 open Workflow
@@ -6,6 +7,7 @@ open Amazon.EC2
 open SnapshotArgs
 open Amazon
 
+// TODO: Pass in credentials instead of using useLocalCredentials
 let locateInstance awsProfile (regionList: RegionEndpoint list) instanceName =
     match useLocalCredentials awsProfile with
     | Ok credentials ->
@@ -35,6 +37,29 @@ let locateInstance awsProfile (regionList: RegionEndpoint list) instanceName =
         | [] -> Error (InstanceNotFound $"No instance found with the name '{instanceName}'")
     | Error err -> failwith err
 
+let executeSnapshots args credentials instanceLocationResults  = 
+    let snapshotResults =
+        [ for (region, instance) in (instanceLocationResults |> Seq.choose Result.toOption) ->
+            async {
+                let endpoint = RegionEndpoint.GetBySystemName(region)
+                let client = new AmazonEC2Client(credentials, endpoint)
+                return! snapshotWorkflow args client (displayName instance)
+            } ]
+        |> Async.Parallel
+        |> Async.RunSynchronously
+        |> Seq.toList
+    let errors = [
+        for (Error snapshotError) in snapshotResults |> Seq.filter (Result.isError) -> 
+            snapshotError
+
+        for (Error locationError) in instanceLocationResults |> Seq.filter (Result.isError) -> 
+            locationError
+    ]
+
+    match errors with 
+    | [] -> Ok ()
+    | _ -> Error errors
+
 [<EntryPoint>]
 let main args =
     try
@@ -53,30 +78,12 @@ let main args =
             instanceIds
             |> Seq.map (locateInstance awsProfile regionList)
 
-        match useLocalCredentials awsProfile with
+        match useLocalCredentials awsProfile with 
         | Ok credentials ->
-            let snapshotResults =
-                [ for (region, instance) in (instanceLocationResults |> Seq.choose Result.toOption) ->
-                    async {
-                        let endpoint = RegionEndpoint.GetBySystemName(region)
-                        let client = new AmazonEC2Client(credentials, endpoint)
-                        return! snapshotWorkflow args client (displayName instance)
-                    } ]
-                |> Async.Parallel
-                |> Async.RunSynchronously
-                |> Seq.toList
-
-            let errors = [
-                for (Error snapshotError) in snapshotResults |> Seq.filter (Result.isError) -> 
-                    snapshotError
-
-                for (Error locationError) in instanceLocationResults |> Seq.filter (Result.isError) -> 
-                    locationError
-            ]
-
-            match errors with 
-            | [] -> printfn "No errors"
-            | _ -> errors |> List.iter (fun err -> eprintfn $"{err}")
+            let snapshotResults = executeSnapshots args credentials instanceLocationResults
+            match snapshotResults with 
+            | Ok _ -> () 
+            | Error errs -> errs |> List.iter (fun err -> eprintfn $"{err}")
         | Error err -> 
             failwith err
 
