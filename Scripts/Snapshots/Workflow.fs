@@ -6,7 +6,14 @@ open WorkScripts.Library.EC2
 
 let private print (input: string) = System.Console.WriteLine(input)
 
-let private displayName (instance: Instance) = 
+let private ( >>= ) computation fn = 
+    async {
+        match! computation with 
+        | Ok r -> return! fn r
+        | Error s -> return Error s
+    }
+
+let displayName (instance: Instance) = 
     let nameTag = 
         instance.Tags 
         |> Seq.tryFind (fun t -> t.Key = "Name")
@@ -14,13 +21,6 @@ let private displayName (instance: Instance) =
     match nameTag with 
     | Some name -> name.Value
     | None -> instance.InstanceId
-
-let private ( >>= ) computation fn = 
-    async {
-        match! computation with 
-        | Ok r -> return! fn r
-        | Error s -> return Error s
-    }
 
 let snapshotWorkflow arguments ec2Client instanceName = 
     let cliArguments = cliParser.Parse arguments

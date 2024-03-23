@@ -3,15 +3,13 @@ open WorkScripts.Library.EC2
 open System.IO
 open Workflow
 open Amazon.EC2
-open Amazon.EC2.Model
 open SnapshotArgs
+open Amazon
 
-let locateInstance awsProfile instanceName = 
-    let regions = Amazon.RegionEndpoint.EnumerableAllRegions
-
+let locateInstance awsProfile (regionList: RegionEndpoint list) instanceName = 
     match useLocalCredentials awsProfile with 
     | Ok credentials ->
-        [ for region in regions ->
+        [ for region in regionList ->
             async {
                 let client = new AmazonEC2Client(credentials, region)
                 let! instanceResult = getInstanceByName client instanceName
@@ -25,20 +23,37 @@ let locateInstance awsProfile instanceName =
         |> Async.Parallel
         |> Async.RunSynchronously
         |> Seq.choose id
-        |> Seq.exactlyOne
     | Error err -> failwith err
 
 [<EntryPoint>]
 let main args = 
     let parsedArgs = cliParser.Parse args
-    let awsProfile = parsedArgs.GetResult Profile
+    let awsProfile = parsedArgs.GetResult SnapshotArgs.Profile
+    let regionList = parsedArgs.GetResult Regions |> Seq.map RegionEndpoint.GetBySystemName |> Seq.toList
     
     // Implementation    
-    let instanceIds  = parsedArgs.GetResult Instance_Ids |> File.ReadAllLines
-    let instanceLocations = 
+    let instanceIds = parsedArgs.GetResult Input |> File.ReadAllLines
+    let instanceLocations =
         instanceIds 
-        |> Seq.map (locateInstance awsProfile)
-        |> Map.ofSeq
+        |> Seq.collect (locateInstance awsProfile regionList)
+        |> Seq.sortBy (fun (region, _) -> region)
 
-    printfn "%A" (cliParser.Parse args)
+    match useLocalCredentials awsProfile with
+    | Ok credentials ->  
+        let results = 
+            [ for (region, instance) in instanceLocations ->
+                    async {
+                        let endpoint = RegionEndpoint.GetBySystemName(region)
+                        let client = new AmazonEC2Client(credentials, endpoint)
+                        return! snapshotWorkflow args client (displayName instance)
+                    }
+            ] 
+            |> Async.Parallel
+            |> Async.RunSynchronously
+
+        // Log negative results
+        printfn "%A" results
+    | Error err -> 
+        failwith err
+
     0
