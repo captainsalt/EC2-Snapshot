@@ -28,7 +28,8 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
         |> Seq.toList
 
     match locationPairList with
-    | [ (_, instance) as locationPair ] when instance.State.Name = InstanceStateName.Stopped -> Ok locationPair
+    | [ (_, instance) as locationPair ] when instance.State.Name = InstanceStateName.Stopped -> 
+        Ok locationPair
     | [ (_, instance) ] ->
         safeErrPrint $"Ignoring {displayName instance}. It has not been stopped"
         Error(InstanceNotStopped $"Instance {displayName instance} has not been stopped")
