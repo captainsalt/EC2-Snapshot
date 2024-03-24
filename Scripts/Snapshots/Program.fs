@@ -12,34 +12,38 @@ open System
 let safeErrPrint (text: string) = System.Console.Error.WriteLine(text)
 
 let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
-    let locationPairList =
-        [ for region in regionList ->
-              async {
-                  let client = new AmazonEC2Client(credentials, region)
-                  let! instanceResult = getInstanceByName client instanceName
+    async {
+        let! locationPairList =
+            [ for region in regionList ->
+                async {
+                    let client = new AmazonEC2Client(credentials, region)
+                    let! instanceResult = getInstanceByName client instanceName
 
-                  match instanceResult with
-                  | Error _ -> return None
-                  | Ok instance -> return Some(region.SystemName, instance)
-              } ]
-        |> Async.Parallel
-        |> Async.RunSynchronously
-        |> Seq.choose id
-        |> Seq.toList
+                    match instanceResult with
+                    | Error _ -> return None
+                    | Ok instance -> return Some(region.SystemName, instance)
+                } ]
+            |> Async.Parallel
 
-    match locationPairList with
-    | [ (_, instance) as locationPair ] when instance.State.Name = InstanceStateName.Stopped -> 
-        Ok locationPair
-    | [ (_, instance) ] ->
-        safeErrPrint $"Ignoring {displayName instance}. It has not been stopped"
-        Error(InstanceNotStopped $"Instance {displayName instance} has not been stopped")
-    | (_, instance) :: _ ->
-        safeErrPrint $"Ignoring {displayName instance}. It has been found in multiple regions"
-        Error(MultipleInstancesFound $"Instance {displayName instance} found in multiple regions")
-    | [] -> 
-        let formattedRegions = regionList |> List.map _.DisplayName |> List.reduce (sprintf "%s, %s")
-        safeErrPrint $"Ignoring '{instanceName}'. Instance not found in regions {formattedRegions}"
-        Error(InstanceNotFound $"Instance '{instanceName}' not found in regions {formattedRegions}")
+        let locationPairList = 
+            locationPairList
+            |> Seq.choose id 
+            |> Seq.toList
+
+        match locationPairList with
+        | [ (_, instance) as locationPair ] when instance.State.Name = InstanceStateName.Stopped -> 
+            return Ok locationPair
+        | [ (_, instance) ] ->
+            safeErrPrint $"Ignoring {displayName instance}. It has not been stopped"
+            return Error(InstanceNotStopped $"Instance {displayName instance} has not been stopped")
+        | (_, instance) :: _ ->
+            safeErrPrint $"Ignoring {displayName instance}. It has been found in multiple regions"
+            return Error(MultipleInstancesFound $"Instance {displayName instance} found in multiple regions")
+        | [] -> 
+            let formattedRegions = regionList |> List.map _.DisplayName |> List.reduce (sprintf "%s, %s")
+            safeErrPrint $"Ignoring '{instanceName}'. Instance not found in regions {formattedRegions}"
+            return Error(InstanceNotFound $"Instance '{instanceName}' not found in regions {formattedRegions}")
+    }
 
 let executeSnapshots credentials args instanceLocationResults =
     let snapshotResults =
@@ -78,13 +82,13 @@ let main args =
                 |> Seq.toList
 
             let ec2LocationResults =
-                let instanceIds =
                     parsedArgs.GetResult Input
                     |> File.ReadAllLines
                     |> Seq.map _.Trim()
                     |> Seq.filter ((<>) "")
-
-                instanceIds |> Seq.map (locateInstance credentials regionList)
+                    |> Seq.map (locateInstance credentials regionList)
+                    |> Async.Parallel
+                    |> Async.RunSynchronously
 
             // Pause if errors and no ignore flag
             let locationErrorsPresent =
