@@ -1,13 +1,13 @@
 ﻿#nowarn "25"
 
-open WorkScripts.Library.Credentials
-open WorkScripts.Library.EC2
-open System.IO
-open Workflow
+open Amazon
 open Amazon.EC2
 open SnapshotArgs
-open Amazon
 open System
+open System.IO
+open Workflow
+open WorkScripts.Library.Credentials
+open WorkScripts.Library.EC2
 
 let safeErrPrint (text: string) = System.Console.Error.WriteLine(text)
 
@@ -85,7 +85,7 @@ let main args =
                     parsedArgs.GetResult Input
                     |> File.ReadAllLines
                     |> Seq.map _.Trim()
-                    |> Seq.filter ((<>) "")
+                    |> Seq.filter (String.IsNullOrWhiteSpace >> not)
                     |> Seq.map (locateInstance credentials regionList)
                     |> Async.Parallel
                     |> Async.RunSynchronously
@@ -104,7 +104,7 @@ let main args =
                 failwith "Stopping script. Errors found when locating instances"
 
             // Execute snapshots
-            let snapshotResults = executeSnapshots credentials args ec2LocationResults
+            let snapshotResults = executeSnapshots credentials parsedArgs ec2LocationResults
 
             match snapshotResults with
             | Ok _ -> ()

@@ -1,8 +1,8 @@
 ﻿namespace WorkScripts.Library
 
 module Credentials =
-    open Amazon.Runtime.CredentialManagement
     open Amazon.Runtime
+    open Amazon.Runtime.CredentialManagement
 
     let useLocalCredentials profileName =
         let chain = CredentialProfileStoreChain()
@@ -15,8 +15,8 @@ module Credentials =
 
 module EC2 =
     open Amazon.EC2
-    open System.Collections.Generic
     open Amazon.EC2.Model
+    open System.Collections.Generic
 
     type AmiRequest =
         { amiName: string
