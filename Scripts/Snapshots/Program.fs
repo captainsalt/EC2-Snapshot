@@ -72,7 +72,7 @@ let executeSnapshots credentials args instanceLocationResults =
 let main args =
     try
         let parsedArgs = cliParser.Parse args
-        let awsProfile = parsedArgs.GetResult SnapshotArgs.Profile
+        let awsProfile = parsedArgs.GetResult Profile
 
         match useLocalCredentials awsProfile with
         | Some credentials ->
