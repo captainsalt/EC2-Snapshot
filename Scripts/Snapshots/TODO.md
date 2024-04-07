@@ -1,2 +1,2 @@
-Add a prompt to start instances
-Wait for instance health checks
+-   Add a prompt to start instances
+-   Wait for instance health checks
