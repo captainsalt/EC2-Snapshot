@@ -92,7 +92,8 @@ let main args =
 
             // Pause if errors and no ignore flag
             let locationErrorsPresent =
-                ec2LocationResults |> Seq.filter (Result.isError) |> Seq.isEmpty |> not
+                let seqHasErrors = Seq.filter (Result.isError) >> Seq.isEmpty >> not
+                seqHasErrors ec2LocationResults
 
             let ignoreErrors = parsedArgs.Contains Ignore_Errors
 
