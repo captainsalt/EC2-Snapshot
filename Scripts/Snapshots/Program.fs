@@ -21,7 +21,7 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
 
                     match instanceResult with
                     | Error _ -> return None
-                    | Ok instance -> return Some(region.SystemName, instance)
+                    | Ok instance -> return Some(region, instance)
                 } ]
             |> Async.Parallel
 
@@ -47,9 +47,9 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
 
 let executeSnapshots credentials args instanceLocationResults =
     let snapshotResults =
-        [ for (region, instance) in (instanceLocationResults |> Seq.choose Result.toOption) ->
+        [ for (region : RegionEndpoint, instance) in (instanceLocationResults |> Seq.choose Result.toOption) ->
               async {
-                  let endpoint = RegionEndpoint.GetBySystemName(region)
+                  let endpoint = RegionEndpoint.GetBySystemName(region.SystemName)
                   let client = new AmazonEC2Client(credentials, endpoint)
 
                   return! snapshotWorkflow args client (displayName instance)
