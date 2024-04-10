@@ -91,17 +91,12 @@ let main args =
                     |> Async.RunSynchronously
 
             // Pause if errors and no ignore flag
-            let locationErrorsPresent =
-                let containsErrors = Seq.filter (Result.isError) >> Seq.isEmpty >> not
-                containsErrors ec2LocationResults
-
+            let ec2LocationErrors = ec2LocationResults |> Seq.filter (Result.isError)
             let ignoreErrors = parsedArgs.Contains Ignore_Errors
+            let containsErrors = ec2LocationErrors |> (Seq.isEmpty >> not)
 
-            if (locationErrorsPresent, ignoreErrors) = (true, false) then
-                ec2LocationResults
-                |> Seq.filter (Result.isError)
-                |> Seq.iter (sprintf "%A" >> safeErrPrint)
-
+            if (containsErrors, ignoreErrors) = (true, false) then
+                ec2LocationErrors |> Seq.iter (sprintf "%A" >> safeErrPrint)
                 failwith "Stopping script. Errors found when locating instances"
 
             // Execute snapshots
