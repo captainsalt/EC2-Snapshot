@@ -104,19 +104,23 @@ module EC2 =
             let instances = extractInstances response
 
             match instances with
-            | [ instance ] when instance.State.Name = InstanceStateName.Terminated ->
-                return Error(InstanceTerminated $"Instance with Name tag '{nameTag}' has been terminated")
             | [ instance ] -> return Ok instance
             | [] -> return Error(InstanceNotFound $"Instance with name '{nameTag}' not found")
             | instances ->
-                let instanceIds =
-                    instances |> List.map _.InstanceId |> List.reduce (sprintf "%s, %s")
+                let nonTerminated =
+                    instances |> List.filter (fun i -> i.State.Name <> InstanceStateName.Terminated)
 
-                return
-                    Error(
-                        MultipleInstancesFound
-                            $"Multiple instances found with tag name '{nameTag}'. Their ids are: {instanceIds}"
-                    )
+                match nonTerminated with
+                | [ instance ] -> return Ok instance
+                | _ ->
+                    let instanceIds =
+                        instances |> List.map _.InstanceId |> List.reduce (sprintf "%s, %s")
+
+                    return
+                        Error(
+                            MultipleInstancesFound
+                                $"Multiple instances found with tag name '{nameTag}'. Their ids are: {instanceIds}"
+                        )
         }
 
     let stopInstance (ec2Client: AmazonEC2Client) (instance: Instance) =

@@ -31,18 +31,15 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
             |> Seq.toList
 
         match locationPairList with
-        | [ (_, instance) as locationPair ] when instance.State.Name = InstanceStateName.Stopped -> 
+        | [ locationPair] -> 
             return Ok locationPair
-        | [ (_, instance) ] ->
-            safeErrPrint $"Ignoring {displayName instance}. It has not been stopped"
-            return Error(InstanceNotStopped $"Instance {displayName instance} has not been stopped")
         | (_, instance) :: _ ->
             safeErrPrint $"Ignoring {displayName instance}. It has been found in multiple regions"
             return Error(MultipleInstancesFound $"Instance {displayName instance} found in multiple regions")
         | [] -> 
             let formattedRegions = regionList |> List.map _.DisplayName |> List.reduce (sprintf "%s, %s")
             safeErrPrint $"Ignoring '{instanceName}'. Instance not found in regions {formattedRegions}"
-            return Error(InstanceNotFound $"Instance '{instanceName}' not found in regions {formattedRegions}")
+            return Error(InstanceNotFound $"Instance '{instanceName}' not found in regions: {formattedRegions}")
     }
 
 let executeSnapshots credentials args instanceLocationResults =
@@ -96,8 +93,10 @@ let main args =
             let containsErrors = ec2LocationErrors |> (Seq.isEmpty >> not)
 
             if (containsErrors, ignoreErrors) = (true, false) then
+                let boundary = String('-', 30)
+                eprintfn "\n\n%sAll Errors%s" boundary boundary
                 ec2LocationErrors |> Seq.iter (sprintf "%A" >> safeErrPrint)
-                failwith "Stopping script. Errors found when locating instances"
+                failwith "Stopping script. Errors found"
 
             // Execute snapshots
             let snapshotResults = executeSnapshots credentials parsedArgs ec2LocationResults
