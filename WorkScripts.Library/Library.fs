@@ -54,10 +54,12 @@ module EC2 =
             let invalidStates = [ ImageState.Error; ImageState.Failed; ImageState.Invalid ]
 
             let image = imageResult.Images |> Seq.tryHead
+            let hasInvalidState (image: Image) = List.contains image.State invalidStates
+            let isAvaliable (image: Image) = image.State.Value = ImageState.Available.Value 
 
             match image with
-            | Some image when image.State.Value = ImageState.Available.Value -> return Ok image.ImageId
-            | Some image when invalidStates |> List.contains image.State ->
+            | Some image when isAvaliable image -> return Ok image.ImageId
+            | Some image when hasInvalidState image ->
                 return Error(ErrorCreatingImage $"Error creating image for instance {image.SourceInstanceId}")
             | Some image ->
                 do! Async.Sleep 2_500
