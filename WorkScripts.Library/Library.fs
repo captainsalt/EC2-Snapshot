@@ -80,11 +80,10 @@ module EC2 =
         }
 
     let displayName (instance: Instance) =
-        let nameTag = instance.Tags |> Seq.tryFind (fun t -> t.Key = "Name")
-
-        match nameTag with
-        | Some name -> name.Value
-        | None -> instance.InstanceId
+        instance.Tags 
+        |> Seq.tryFind (fun t -> t.Key = "Name") 
+        |> Option.map(fun t -> t.Value) 
+        |> Option.defaultValue(instance.InstanceId)
 
     let getInstanceById (ec2Client: AmazonEC2Client) (instanceId: string) =
         async {
