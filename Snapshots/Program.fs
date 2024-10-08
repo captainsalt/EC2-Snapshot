@@ -8,6 +8,7 @@ open System.IO
 open Workflow
 open WorkScripts.Library.Credentials
 open WorkScripts.Library.EC2
+open Argu
 
 let safeErrPrint (text: string) = System.Console.Error.WriteLine(text)
 
@@ -61,6 +62,34 @@ let executeSnapshots credentials args instanceLocationResults =
     | [] -> Ok()
     | _ -> Error errors
 
+let getInstanceLocations credentials (parsedArgs: ParseResults<Arguments>) = 
+    let regionList =
+        parsedArgs.GetResult Regions
+        |> Seq.map RegionEndpoint.GetBySystemName
+        |> Seq.toList
+
+    let ec2LocationResults =
+            parsedArgs.GetResult Input
+            |> File.ReadAllLines
+            |> Seq.map _.Trim()
+            |> Seq.filter (String.IsNullOrWhiteSpace >> not)
+            |> Seq.map (locateInstance credentials regionList)
+            |> Async.Parallel
+            |> Async.RunSynchronously
+
+    // Pause if errors and no ignore flag
+    let ec2LocationErrors = ec2LocationResults |> Seq.filter (Result.isError)
+    let ignoreErrors = parsedArgs.Contains Ignore_Errors
+    let containsErrors = ec2LocationErrors |> (Seq.isEmpty >> not)
+
+    if (containsErrors, ignoreErrors) = (true, false) then
+        let boundary = String('-', 30)
+        eprintfn "\n\n%sAll Errors%s" boundary boundary
+        ec2LocationErrors |> Seq.iter (sprintf "%A" >> safeErrPrint)
+        failwith "Stopping script. Errors found"
+
+    ec2LocationResults
+
 [<EntryPoint>]
 let main args =
     try
@@ -70,32 +99,7 @@ let main args =
         match useLocalCredentials awsProfile with
         | None -> safeErrPrint $"Falied to get credentials with profile '{awsProfile}'. Make sure that it exists"
         | Some credentials ->
-            let regionList =
-                parsedArgs.GetResult Regions
-                |> Seq.map RegionEndpoint.GetBySystemName
-                |> Seq.toList
-
-            let ec2LocationResults =
-                    parsedArgs.GetResult Input
-                    |> File.ReadAllLines
-                    |> Seq.map _.Trim()
-                    |> Seq.filter (String.IsNullOrWhiteSpace >> not)
-                    |> Seq.map (locateInstance credentials regionList)
-                    |> Async.Parallel
-                    |> Async.RunSynchronously
-
-            // Pause if errors and no ignore flag
-            let ec2LocationErrors = ec2LocationResults |> Seq.filter (Result.isError)
-            let ignoreErrors = parsedArgs.Contains Ignore_Errors
-            let containsErrors = ec2LocationErrors |> (Seq.isEmpty >> not)
-
-            if (containsErrors, ignoreErrors) = (true, false) then
-                let boundary = String('-', 30)
-                eprintfn "\n\n%sAll Errors%s" boundary boundary
-                ec2LocationErrors |> Seq.iter (sprintf "%A" >> safeErrPrint)
-                failwith "Stopping script. Errors found"
-
-            // Execute snapshots
+            let ec2LocationResults = getInstanceLocations credentials parsedArgs
             let snapshotResults = executeSnapshots credentials parsedArgs ec2LocationResults
 
             match snapshotResults with
@@ -104,7 +108,6 @@ let main args =
                 let boundary = String('-', 30)
                 eprintfn "\n\n%sAll Errors%s" boundary boundary
                 errs |> List.iter (sprintf "%A" >> safeErrPrint)
-
 
         0
     with err ->
