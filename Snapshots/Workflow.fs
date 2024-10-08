@@ -19,7 +19,7 @@ let combineTags (instance: Instance) additionalTags =
         [ for tag in instance.Tags -> (tag.Key, tag.Value) ] |> Map.ofList
 
     additionalTags
-    |> List.filter (fst >> instanceTags.ContainsKey >> not) 
+    |> List.filter (fst >> instanceTags.ContainsKey >> not)
     |> (@) (instanceTags |> Map.toList)
 
 let snapshotWorkflow (parsedArgs: ParseResults<Arguments>) ec2Client instanceName =
@@ -54,6 +54,13 @@ let snapshotWorkflow (parsedArgs: ParseResults<Arguments>) ec2Client instanceNam
     >>= fun instance ->
         match parsedArgs.Contains Start_Instances with
         | true ->
-            print $"Starting {displayName instance}"
-            startInstance ec2Client instance
+            let isIdServer = displayName instance |> fun str -> str.Contains("id")
+
+            match isIdServer with
+            | true ->
+                print $"Starting {displayName instance}"
+                startInstance ec2Client instance
+            | false -> Ok instance |> async.Return
+
         | false -> async.Return(Ok instance)
+
