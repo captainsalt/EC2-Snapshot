@@ -25,18 +25,18 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
                 } ]
             |> Async.Parallel
 
-        let locationPairList = 
+        let locationPairList =
             locationPairList
-            |> Seq.choose id 
+            |> Seq.choose id
             |> Seq.toList
 
         match locationPairList with
-        | [ locationPair] -> 
+        | [ locationPair] ->
             return Ok locationPair
         | (_, instance) :: _ ->
             safeErrPrint $"Ignoring {displayName instance}. It has been found in multiple regions"
             return Error(MultipleInstancesFound $"Instance {displayName instance} found in multiple regions")
-        | [] -> 
+        | [] ->
             let formattedRegions = regionList |> List.map _.DisplayName |> List.reduce (sprintf "%s, %s")
             safeErrPrint $"Ignoring '{instanceName}'. Instance not found in regions {formattedRegions}"
             return Error(InstanceNotFound $"Instance '{instanceName}' not found in regions: {formattedRegions}")
@@ -56,9 +56,8 @@ let executeSnapshots credentials args instanceLocationResults =
         |> Seq.toList
 
     let errors =
-        [ let filterErrors list = list |> Seq.filter (Result.isError)
-
-          for (Error locatorError) in filterErrors instanceLocationResults -> locatorError
+        let filterErrors list = list |> Seq.filter (Result.isError)
+        [ for (Error locatorError) in filterErrors instanceLocationResults -> locatorError
           for (Error snapshotError) in filterErrors snapshotResults -> snapshotError ]
 
     match errors with
@@ -72,6 +71,7 @@ let main args =
         let awsProfile = parsedArgs.GetResult Profile
 
         match useLocalCredentials awsProfile with
+        | None -> safeErrPrint $"Falied to get credentials with profile '{awsProfile}'. Make sure that it exists"
         | Some credentials ->
             let regionList =
                 parsedArgs.GetResult Regions
@@ -108,7 +108,6 @@ let main args =
                 eprintfn "\n\n%sAll Errors%s" boundary boundary
                 errs |> List.iter (sprintf "%A" >> safeErrPrint)
 
-        | None -> safeErrPrint $"Falied to get credentials with profile '{awsProfile}'. Make sure that it exists"
 
         0
     with err ->
