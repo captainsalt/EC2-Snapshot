@@ -173,6 +173,7 @@ module EC2 =
                     new CreateImageRequest(
                         InstanceId = amiRequest.instance.InstanceId,
                         Name = amiRequest.amiName,
+                        Description = amiRequest.description,
                         TagSpecifications =
                             new List<TagSpecification>(
                                 [ new TagSpecification(ResourceType = ResourceType.Image, Tags = new List<Tag>(tags))
