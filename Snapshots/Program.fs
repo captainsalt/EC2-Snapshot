@@ -62,7 +62,7 @@ let executeSnapshots credentials args instanceLocationResults =
     | [] -> Ok()
     | _ -> Error errors
 
-let getInstanceLocations credentials (parsedArgs: ParseResults<Arguments>) = 
+let getInstanceLocations credentials (parsedArgs: ParseResults<Arguments>) =
     let regionList =
         parsedArgs.GetResult Regions
         |> Seq.map RegionEndpoint.GetBySystemName

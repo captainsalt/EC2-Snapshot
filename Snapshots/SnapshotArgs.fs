@@ -19,7 +19,7 @@ type Arguments =
             | Regions _ -> "List of regions to search for instances"
             | Input _ -> "Path to a file with a list of instance ids"
             | CTask _ -> "The SNOW ticket for this snapshot request. Example: 'CTASK0088254'"
-            | Description _ -> 
+            | Description _ ->
                 $"""Description of the snapshot resource. Example: '{DateTime.Now.ToString("M/d/yyyy")} CTASK0088254'"""
             | Stop_Instances -> "Use this flag if you want the script to stop the instances before taking snapshots"
             | Start_Instances ->
