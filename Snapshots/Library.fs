@@ -34,6 +34,10 @@ module EC2 =
         | ErrorStartingInstance of string
         | ErrorCreatingImage of string
 
+    let ( >>>= ) m fn = async.Bind(m, fn)
+
+    let ( >>= ) m fn = async.Bind(m, fn >> async.Return)
+
     let private tagsFromTuple (tags: (string * string) seq) =
         tags |> Seq.map (fun (name, value) -> new Tag(name, value))
 
@@ -47,19 +51,21 @@ module EC2 =
 
     let rec private waitForImage (ec2Client: AmazonEC2Client) (imageId: string) =
         async {
-            let describeImageRequest =
+            let! image =
                 DescribeImagesRequest(ImageIds = new List<string>([ imageId ]))
+                |> ec2Client.DescribeImagesAsync
+                |> Async.AwaitTask
+                >>= fun describeResponse -> describeResponse.Images
+                                            |> Seq.tryHead
 
-            let! imageResult = ec2Client.DescribeImagesAsync(describeImageRequest) |> Async.AwaitTask
-            let invalidStates = [ ImageState.Error; ImageState.Failed; ImageState.Invalid ]
+            let isInvalidState (image: Image) =
+                List.contains image.State [ ImageState.Error; ImageState.Failed; ImageState.Invalid ]
 
-            let image = imageResult.Images |> Seq.tryHead
-            let hasInvalidState (image: Image) = List.contains image.State invalidStates
-            let isAvaliable (image: Image) = image.State.Value = ImageState.Available.Value 
+            let isAvaliable (image: Image) = image.State.Value = ImageState.Available.Value
 
             match image with
             | Some image when isAvaliable image -> return Ok image.ImageId
-            | Some image when hasInvalidState image ->
+            | Some image when isInvalidState image ->
                 return Error(ErrorCreatingImage $"Error creating image for instance {image.SourceInstanceId}")
             | Some image ->
                 do! Async.Sleep 2_500
@@ -69,9 +75,12 @@ module EC2 =
 
     let private isInstanceStopped (ec2Client: AmazonEC2Client) (instance: Instance) =
         async {
-            let request = createDescribeInstancesRequest "instance-id" instance.InstanceId
-            let! response = ec2Client.DescribeInstancesAsync(request) |> Async.AwaitTask
-            let instance = extractInstances response |> Seq.tryHead
+            let! instance =
+                createDescribeInstancesRequest "instance-id" instance.InstanceId
+                |> ec2Client.DescribeInstancesAsync
+                |> Async.AwaitTask
+                >>= fun response -> extractInstances response
+                                    |> Seq.tryHead
 
             match instance with
             | Some instance when instance.State.Name = InstanceStateName.Stopped -> return true
@@ -80,16 +89,18 @@ module EC2 =
         }
 
     let displayName (instance: Instance) =
-        instance.Tags 
-        |> Seq.tryFind (fun t -> t.Key = "Name") 
-        |> Option.map(fun t -> t.Value) 
+        instance.Tags
+        |> Seq.tryFind (fun t -> t.Key = "Name")
+        |> Option.map(fun t -> t.Value)
         |> Option.defaultValue(instance.InstanceId)
 
     let getInstanceById (ec2Client: AmazonEC2Client) (instanceId: string) =
         async {
-            let request = createDescribeInstancesRequest "instance-id" instanceId
-            let! response = ec2Client.DescribeInstancesAsync(request) |> Async.AwaitTask
-            let instances = extractInstances response
+            let! instances =
+                createDescribeInstancesRequest "instance-id" instanceId
+                |> ec2Client.DescribeInstancesAsync
+                |> Async.AwaitTask
+                >>= fun response -> extractInstances response
 
             match instances with
             | [ instance ] when instance.State.Name = InstanceStateName.Terminated ->
@@ -100,9 +111,11 @@ module EC2 =
 
     let getInstanceByName (ec2Client: AmazonEC2Client) (nameTag: string) =
         async {
-            let request = createDescribeInstancesRequest "tag:Name" nameTag
-            let! response = ec2Client.DescribeInstancesAsync(request) |> Async.AwaitTask
-            let instances = extractInstances response
+            let! instances =
+                createDescribeInstancesRequest "tag:Name" nameTag
+                |> ec2Client.DescribeInstancesAsync
+                |> Async.AwaitTask
+                >>= fun response -> extractInstances response
 
             match instances with
             | [ instance ] -> return Ok instance
@@ -167,10 +180,12 @@ module EC2 =
                             )
                     )
 
-                let! response = ec2Client.CreateImageAsync(imageRequest) |> Async.AwaitTask
-                let! imageResult = waitForImage ec2Client response.ImageId
+                let! image =
+                    ec2Client.CreateImageAsync(imageRequest)
+                    |> Async.AwaitTask
+                    >>>= fun response -> waitForImage ec2Client response.ImageId
 
-                match imageResult with
+                match image with
                 | Ok _ -> return Ok amiRequest.instance
                 | Error err -> return Error err
         }
