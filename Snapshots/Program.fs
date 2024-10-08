@@ -24,21 +24,18 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
                     | Ok instance -> return Some(region, instance)
                 } ]
             |> Async.Parallel
-
-        let locationPairList =
-            locationPairList
-            |> Seq.choose id
-            |> Seq.toList
+            >>= Seq.choose id
+            >>= Seq.toList
 
         match locationPairList with
         | [ locationPair] ->
             return Ok locationPair
         | (_, instance) :: _ ->
-            safeErrPrint $"Ignoring {displayName instance}. It has been found in multiple regions"
+            safeErrPrint $"{displayName instance} has been found in multiple regions"
             return Error(MultipleInstancesFound $"Instance {displayName instance} found in multiple regions")
         | [] ->
             let formattedRegions = regionList |> List.map _.DisplayName |> List.reduce (sprintf "%s, %s")
-            safeErrPrint $"Ignoring '{instanceName}'. Instance not found in regions {formattedRegions}"
+            safeErrPrint $"'{instanceName}' not found in regions {formattedRegions}"
             return Error(InstanceNotFound $"Instance '{instanceName}' not found in regions: {formattedRegions}")
     }
 
