@@ -116,25 +116,19 @@ module EC2 =
                 |> ec2Client.DescribeInstancesAsync
                 |> Async.AwaitTask
                 >>= fun response -> extractInstances response
+                >>= fun instances -> instances |> List.filter (fun i -> i.State.Name <> InstanceStateName.Terminated)
 
             match instances with
             | [ instance ] -> return Ok instance
             | [] -> return Error(InstanceNotFound $"Instance with name '{nameTag}' not found")
             | instances ->
-                let nonTerminated =
-                    instances |> List.filter (fun i -> i.State.Name <> InstanceStateName.Terminated)
+                let instanceIds = instances |> List.map _.InstanceId |> List.reduce (sprintf "%s, %s")
 
-                match nonTerminated with
-                | [ instance ] -> return Ok instance
-                | _ ->
-                    let instanceIds =
-                        instances |> List.map _.InstanceId |> List.reduce (sprintf "%s, %s")
-
-                    return
-                        Error(
-                            MultipleInstancesFound
-                                $"Multiple instances found with tag name '{nameTag}'. Their ids are: {instanceIds}"
-                        )
+                return
+                    Error(
+                        MultipleInstancesFound
+                            $"Multiple instances found with tag name '{nameTag}'. Their ids are: {instanceIds}"
+                    )
         }
 
     let stopInstance (ec2Client: AmazonEC2Client) (instance: Instance) =
