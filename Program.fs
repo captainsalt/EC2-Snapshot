@@ -69,13 +69,13 @@ let getInstanceLocations credentials (parsedArgs: ParseResults<Arguments>) =
         |> Seq.toList
 
     let ec2LocationResults =
-            parsedArgs.GetResult Input
-            |> File.ReadAllLines
-            |> Seq.map _.Trim()
-            |> Seq.filter (String.IsNullOrWhiteSpace >> not)
-            |> Seq.map (locateInstance credentials regionList)
-            |> Async.Parallel
-            |> Async.RunSynchronously
+        parsedArgs.GetResult Input
+        |> File.ReadAllLines
+        |> Seq.map _.Trim()
+        |> Seq.filter (String.IsNullOrWhiteSpace >> not)
+        |> Seq.map (locateInstance credentials regionList)
+        |> Async.Parallel
+        |> Async.RunSynchronously
 
     // Pause if errors and no ignore flag
     let ec2LocationErrors = ec2LocationResults |> Seq.filter (Result.isError)
