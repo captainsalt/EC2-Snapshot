@@ -8,7 +8,7 @@ open Amazon.EC2.Model
 let private print (input: string) = System.Console.WriteLine(input)
 
 let private (|IdServer|NonIdServer|) (instance: Instance) =
-    match displayName instance |> _.Contains("id") with
+    match Helpers.displayName instance |> _.Contains("id") with
     | true -> IdServer instance
     | false -> NonIdServer instance
 
@@ -33,7 +33,7 @@ let snapshotWorkflow (parsedArgs: ParseResults<Arguments>) ec2Client instanceNam
         match parsedArgs.Contains Stop_Instances with
         | false -> async.Return(Ok instance)
         | true ->
-            print $"Stopping {displayName instance}"
+            print $"Stopping {Helpers.displayName instance}"
             stopInstance ec2Client instance
 
     >>= fun instance ->
@@ -47,12 +47,12 @@ let snapshotWorkflow (parsedArgs: ParseResults<Arguments>) ec2Client instanceNam
             combineTags instance snapshotTags
 
         let amiRequest =
-            { instance = instance
-              amiName = $"{instanceName}-{changeTaskNumber}"
-              description = parsedArgs.GetResult(Description)
-              tags = tags }
+            { Instance = instance
+              AmiName = $"{instanceName}-{changeTaskNumber}"
+              Description = parsedArgs.GetResult(Description)
+              Tags = tags }
 
-        print $"""Creating ami for {displayName instance}"""
+        print $"""Creating ami for {Helpers.displayName instance}"""
 
         createAmi ec2Client amiRequest
 
@@ -63,6 +63,6 @@ let snapshotWorkflow (parsedArgs: ParseResults<Arguments>) ec2Client instanceNam
             match instance with
             | NonIdServer instance -> Ok instance |> async.Return
             | IdServer instance ->
-                print $"Starting {displayName instance}"
+                print $"Starting {Helpers.displayName instance}"
                 startInstance ec2Client instance
 

@@ -4,207 +4,213 @@ module Credentials =
     open Amazon.Runtime
     open Amazon.Runtime.CredentialManagement
 
-    let useLocalCredentials profileName =
+    /// Retrieve AWS credentials from a specific profile
+    let tryGetCredentials (profileName: string) : AWSCredentials option =
         let chain = CredentialProfileStoreChain()
-        let mutable credentials = Unchecked.defaultof<AWSCredentials>
-
-        if chain.TryGetAWSCredentials(profileName, &credentials) then
-            Some credentials
-        else
-            None
+        match chain.TryGetAWSCredentials(profileName) with
+        | true, credentials -> Some credentials
+        | _ -> None
 
 module EC2 =
     open Amazon.EC2
     open Amazon.EC2.Model
     open System.Collections.Generic
 
-    type AmiRequest =
-        { amiName: string
-          description: string
-          tags: (string * string) seq
-          instance: Instance }
+    /// Represents a request to create an Amazon Machine Image (AMI)
+    type AmiRequest = {
+        AmiName: string
+        Description: string
+        Tags: (string * string) list
+        Instance: Instance
+    }
 
-    type Error =
-        | InstanceNotFound of string
-        | ImageNotFound of string
-        | InstanceTerminated of string
-        | InstanceNotStopped of string
-        | MultipleInstancesFound of string
-        | ErrorStoppingInstance of string
-        | ErrorStartingInstance of string
-        | ErrorCreatingImage of string
+    /// Comprehensive error type for EC2 operations
+    type OperationError =
+        | InstanceNotFound of message: string
+        | ImageNotFound of message: string
+        | InstanceTerminated of message: string
+        | InstanceNotStopped of message: string
+        | MultipleInstancesFound of message: string
+        | ErrorStoppingInstance of message: string
+        | ErrorStartingInstance of message: string
+        | ErrorCreatingImage of message: string
 
-    let ( >>>= ) m fn = async.Bind(m, fn)
 
-    let ( >>= ) m fn = async.Bind(m, fn >> async.Return)
+    let (>>>=) m fn = async.Bind(m, fn)
+    let (>>=) m fn = async.Bind(m, fn >> async.Return)
 
-    let private tagsFromTuple (tags: (string * string) seq) =
-        tags |> Seq.map (fun (name, value) -> new Tag(name, value))
+    /// Utility functions for AWS EC2 operations
+    module internal Helpers =
+        let tagsToAwsTags (tags: (string * string) seq) =
+            tags |> Seq.map (fun (name, value) -> Tag(name, value)) |> List.ofSeq
 
-    let private createDescribeInstancesRequest filterName filterValue =
-        new DescribeInstancesRequest(
-            Filters = new List<Filter>([ new Filter(filterName, new List<string>([ filterValue ])) ])
-        )
+        let createDescribeInstancesRequest filterName filterValue =
+            DescribeInstancesRequest(
+                Filters = ResizeArray [ Filter(filterName, ResizeArray [ filterValue ]) ]
+            )
 
-    let private extractInstances (response: DescribeInstancesResponse) =
-        response.Reservations |> Seq.collect _.Instances |> Seq.toList
+        let extractInstances (response: DescribeInstancesResponse) =
+            response.Reservations 
+            |> Seq.collect (fun reservation -> reservation.Instances)
+            |> List.ofSeq
 
-    let rec private waitForImage (ec2Client: AmazonEC2Client) (imageId: string) =
-        async {
-            let! image =
-                DescribeImagesRequest(ImageIds = new List<string>([ imageId ]))
-                |> ec2Client.DescribeImagesAsync
+        let displayName (instance: Instance) =
+            instance.Tags
+            |> Seq.tryFind (fun t -> t.Key = "Name")
+            |> Option.map (fun t -> t.Value)
+            |> Option.defaultValue instance.InstanceId
+
+    /// Waits for an AMI to become available
+    let private waitForImage (ec2Client: AmazonEC2Client) (imageId: string) =
+        let rec waitLoop() = async {
+            let! describeResponse = 
+                ec2Client.DescribeImagesAsync(DescribeImagesRequest(ImageIds = ResizeArray [ imageId ]))
                 |> Async.AwaitTask
-                >>= fun describeResponse -> describeResponse.Images
-                                            |> Seq.tryHead
 
-            let isInvalidState (image: Image) =
-                List.contains image.State [ ImageState.Error; ImageState.Failed; ImageState.Invalid ]
-
-            let isAvaliable (image: Image) = image.State.Value = ImageState.Available.Value
+            let image = describeResponse.Images |> Seq.tryHead
 
             match image with
-            | Some image when isAvaliable image -> return Ok image.ImageId
-            | Some image when isInvalidState image ->
-                return Error(ErrorCreatingImage $"Error creating image for instance {image.SourceInstanceId}")
-            | Some image ->
-                do! Async.Sleep 2_500
-                return! waitForImage ec2Client image.ImageId
-            | None -> return Error(ImageNotFound $"Image {imageId} not found")
+            | Some img when img.State.Value = ImageState.Available.Value -> 
+                return Ok img.ImageId
+            | Some img when 
+                List.contains img.State [ ImageState.Error; ImageState.Failed; ImageState.Invalid ] ->
+                return Error(OperationError.ErrorCreatingImage $"Error creating image for instance {img.SourceInstanceId}")
+            | Some _ -> 
+                do! Async.Sleep 2500
+                return! waitLoop()
+            | None -> 
+                return Error(OperationError.ImageNotFound $"Image {imageId} not found")
         }
 
+        waitLoop ()
+
+    /// Check if an instance is in a stopped state
     let private isInstanceStopped (ec2Client: AmazonEC2Client) (instance: Instance) =
         async {
-            let! instance =
-                createDescribeInstancesRequest "instance-id" instance.InstanceId
-                |> ec2Client.DescribeInstancesAsync
+            let! response = 
+                Helpers.createDescribeInstancesRequest "instance-id" instance.InstanceId
+                |> ec2Client.DescribeInstancesAsync 
                 |> Async.AwaitTask
-                >>= fun response -> extractInstances response
-                                    |> Seq.tryHead
 
-            match instance with
-            | Some instance when instance.State.Name = InstanceStateName.Stopped -> return true
-            | Some _ -> return false
-            | None -> return false
+            return 
+                Helpers.extractInstances response
+                |> List.tryHead
+                |> Option.exists (fun i -> i.State.Name = InstanceStateName.Stopped)
         }
 
-    let displayName (instance: Instance) =
-        instance.Tags
-        |> Seq.tryFind (fun t -> t.Key = "Name")
-        |> Option.map(fun t -> t.Value)
-        |> Option.defaultValue(instance.InstanceId)
-
+    /// Retrieve an instance by its ID
     let getInstanceById (ec2Client: AmazonEC2Client) (instanceId: string) =
         async {
-            let! instances =
-                createDescribeInstancesRequest "instance-id" instanceId
-                |> ec2Client.DescribeInstancesAsync
+            let! instances = 
+                Helpers.createDescribeInstancesRequest "instance-id" instanceId
+                |> ec2Client.DescribeInstancesAsync 
                 |> Async.AwaitTask
-                >>= fun response -> extractInstances response
+                >>= (Helpers.extractInstances >> List.filter (fun i -> i.State.Name <> InstanceStateName.Terminated))
 
             match instances with
-            | [ instance ] when instance.State.Name = InstanceStateName.Terminated ->
-                return Error(InstanceTerminated $"Instance '{displayName instance}' has been terminated")
             | [ instance ] -> return Ok instance
-            | _ -> return Error(InstanceNotFound $"Instance with id '{instanceId}' not found")
+            | [] -> return Error(OperationError.InstanceNotFound $"Instance with id '{instanceId}' not found")
+            | _ -> 
+                let instanceIds = instances |> List.map (fun i -> i.InstanceId) |> String.concat ", "
+                return Error(OperationError.MultipleInstancesFound 
+                    $"Multiple non-terminated instances found with id '{instanceId}'. Their ids are: {instanceIds}")
         }
 
+    /// Retrieve an instance by its Name tag
     let getInstanceByName (ec2Client: AmazonEC2Client) (nameTag: string) =
         async {
-            let! instances =
-                createDescribeInstancesRequest "tag:Name" nameTag
-                |> ec2Client.DescribeInstancesAsync
+            let! instances = 
+                Helpers.createDescribeInstancesRequest "tag:Name" nameTag
+                |> ec2Client.DescribeInstancesAsync 
                 |> Async.AwaitTask
-                >>= fun response -> extractInstances response
-                >>= fun instances -> instances |> List.filter (fun i -> i.State.Name <> InstanceStateName.Terminated)
+                >>= (Helpers.extractInstances >> List.filter (fun i -> i.State.Name <> InstanceStateName.Terminated))
 
             match instances with
             | [ instance ] -> return Ok instance
-            | [] -> return Error(InstanceNotFound $"Instance with name '{nameTag}' not found")
+            | [] -> return Error(OperationError.InstanceNotFound $"Instance with name '{nameTag}' not found")
             | instances ->
-                let instanceIds = instances |> List.map _.InstanceId |> List.reduce (sprintf "%s, %s")
-
-                return
-                    Error(
-                        MultipleInstancesFound
-                            $"Multiple instances found with tag name '{nameTag}'. Their ids are: {instanceIds}"
-                    )
+                let instanceIds = instances |> List.map (fun i -> i.InstanceId) |> String.concat ", "
+                return Error(OperationError.MultipleInstancesFound 
+                    $"Multiple instances found with tag name '{nameTag}'. Their ids are: {instanceIds}")
         }
 
+    /// Stop an EC2 instance
     let stopInstance (ec2Client: AmazonEC2Client) (instance: Instance) =
         async {
-            do!
-                ec2Client.StopInstancesAsync(StopInstancesRequest(InstanceIds = ResizeArray [ instance.InstanceId ]))
+            do! ec2Client.StopInstancesAsync(StopInstancesRequest(InstanceIds = ResizeArray [ instance.InstanceId ]))
                 |> Async.AwaitTask
                 |> Async.Ignore
 
-            let rec waitUntilStopped () =
-                async {
-                    let! instanceResult = getInstanceById ec2Client instance.InstanceId
+            let rec waitUntilStopped() = async {
+                let! instanceResult = getInstanceById ec2Client instance.InstanceId
 
-                    match instanceResult with
-                    | Ok instance when instance.State.Name = InstanceStateName.Stopped -> return Ok instance
-                    | Ok _ ->
-                        do! Async.Sleep 2_500
-                        return! waitUntilStopped ()
-                    | Error s ->
-                        return
-                            Error(ErrorStoppingInstance $"Error while stopping instance '{displayName instance}': {s}")
-                }
+                match instanceResult with
+                | Ok stoppedInstance when stoppedInstance.State.Name = InstanceStateName.Stopped -> 
+                    return Ok stoppedInstance
+                | Ok _ -> 
+                    do! Async.Sleep 2500
+                    return! waitUntilStopped()
+                | Error msg -> 
+                    return Error(OperationError.ErrorStoppingInstance 
+                        $"Error while stopping instance '{Helpers.displayName instance}': {msg}")
+            }
 
-            return! waitUntilStopped ()
+            return! waitUntilStopped()
         }
 
+    /// Create an Amazon Machine Image (AMI) from an instance
     let createAmi (ec2Client: AmazonEC2Client) (amiRequest: AmiRequest) =
         async {
-            match! isInstanceStopped ec2Client amiRequest.instance with
-            | false ->
-                return Error(InstanceNotStopped $"Instance {displayName amiRequest.instance} has not been stopped")
-            | true ->
-                let tags = tagsFromTuple amiRequest.tags
+            let! isStopped = isInstanceStopped ec2Client amiRequest.Instance
 
-                let imageRequest =
-                    new CreateImageRequest(
-                        InstanceId = amiRequest.instance.InstanceId,
-                        Name = amiRequest.amiName,
-                        Description = amiRequest.description,
-                        TagSpecifications =
-                            new List<TagSpecification>(
-                                [ new TagSpecification(ResourceType = ResourceType.Image, Tags = new List<Tag>(tags))
-                                  new TagSpecification(ResourceType = ResourceType.Snapshot, Tags = new List<Tag>(tags)) ]
-                            )
+            if not isStopped then 
+                return Error(OperationError.InstanceNotStopped 
+                    $"Instance {Helpers.displayName amiRequest.Instance} has not been stopped")
+            else
+                let tags = Helpers.tagsToAwsTags amiRequest.Tags
+
+                let imageRequest = 
+                    CreateImageRequest(
+                        InstanceId = amiRequest.Instance.InstanceId,
+                        Name = amiRequest.AmiName,
+                        Description = amiRequest.Description,
+                        TagSpecifications = ResizeArray [
+                            TagSpecification(ResourceType = ResourceType.Image, Tags = ResizeArray tags)
+                            TagSpecification(ResourceType = ResourceType.Snapshot, Tags = ResizeArray tags)
+                        ]
                     )
 
-                let! image =
+                let! imageResult = 
                     ec2Client.CreateImageAsync(imageRequest)
                     |> Async.AwaitTask
                     >>>= fun response -> waitForImage ec2Client response.ImageId
 
-                match image with
-                | Ok _ -> return Ok amiRequest.instance
-                | Error err -> return Error err
+                return 
+                    match imageResult with
+                    | Ok _ -> Ok amiRequest.Instance
+                    | Error err -> Error err
         }
 
+    /// Start an EC2 instance
     let startInstance (ec2Client: AmazonEC2Client) (instance: Instance) =
         async {
-            do!
-                ec2Client.StartInstancesAsync(StartInstancesRequest(InstanceIds = ResizeArray [ instance.InstanceId ]))
+            do! ec2Client.StartInstancesAsync(StartInstancesRequest(InstanceIds = ResizeArray [ instance.InstanceId ]))
                 |> Async.AwaitTask
                 |> Async.Ignore
 
-            let rec waitUntilStarted () =
-                async {
-                    let! instanceResult = getInstanceById ec2Client instance.InstanceId
+            let rec waitUntilStarted() = async {
+                let! instanceResult = getInstanceById ec2Client instance.InstanceId
 
-                    match instanceResult with
-                    | Ok instance when instance.State.Name = InstanceStateName.Running -> return Ok instance
-                    | Ok _ ->
-                        do! Async.Sleep 2_500
-                        return! waitUntilStarted ()
-                    | Error msg ->
-                        return
-                            Error(ErrorStartingInstance $"Error when starting instance '{displayName instance}': {msg}")
-                }
+                match instanceResult with
+                | Ok startedInstance when startedInstance.State.Name = InstanceStateName.Running -> 
+                    return Ok startedInstance
+                | Ok _ -> 
+                    do! Async.Sleep 2500
+                    return! waitUntilStarted()
+                | Error msg -> 
+                    return Error(OperationError.ErrorStartingInstance 
+                        $"Error when starting instance '{Helpers.displayName instance}': {msg}")
+            }
 
-            return! waitUntilStarted ()
+            return! waitUntilStarted()
         }

@@ -32,8 +32,8 @@ let locateInstance credentials (regionList: RegionEndpoint list) instanceName =
         | [ locationPair] ->
             return Ok locationPair
         | (_, instance) :: _ ->
-            safeErrPrint $"{displayName instance} has been found in multiple regions"
-            return Error(MultipleInstancesFound $"Instance {displayName instance} found in multiple regions")
+            safeErrPrint $"{Helpers.displayName instance} has been found in multiple regions"
+            return Error(MultipleInstancesFound $"Instance {Helpers.displayName instance} found in multiple regions")
         | [] ->
             let formattedRegions = regionList |> List.map _.DisplayName |> List.reduce (sprintf "%s, %s")
             safeErrPrint $"'{instanceName}' not found in regions {formattedRegions}"
@@ -47,7 +47,7 @@ let executeSnapshots credentials args instanceLocationResults =
                   let endpoint = RegionEndpoint.GetBySystemName(region.SystemName)
                   let client = new AmazonEC2Client(credentials, endpoint)
 
-                  return! snapshotWorkflow args client (displayName instance)
+                  return! snapshotWorkflow args client (Helpers.displayName instance)
               } ]
         |> Async.Parallel
         |> Async.RunSynchronously
@@ -96,7 +96,7 @@ let main args =
         let parsedArgs = cliParser.Parse args
         let awsProfile = parsedArgs.GetResult Profile
 
-        match useLocalCredentials awsProfile with
+        match tryGetCredentials awsProfile with
         | None -> safeErrPrint $"Falied to get credentials with profile '{awsProfile}'. Make sure that it exists"
         | Some credentials ->
             let ec2LocationResults = getInstanceLocations credentials parsedArgs
